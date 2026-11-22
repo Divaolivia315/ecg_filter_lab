@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from . import config, dataset, experiments, filters, metrics
 from .schemas import CompareRequest, FilterConfig, NoisePreviewRequest, ResponseRequest, SignalSelection
@@ -512,3 +514,11 @@ def export_kind(exp_id: str, kind: str = Query(default="summary")) -> Response:
     if kind not in mapping:
         raise HTTPException(status_code=400, detail={"message": f"Unknown export kind {kind!r}."})
     return mapping[kind](exp_id)
+
+
+# Vercel builds the Vite app before importing this module. Its StaticFiles
+# integration promotes the frontend directory to the CDN. During local
+# development, Vite continues to serve the UI and proxy /api to this app.
+frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if (frontend_dist / "index.html").is_file():
+    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")

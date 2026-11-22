@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import re
 from dataclasses import dataclass
 from functools import lru_cache
@@ -115,7 +116,9 @@ def list_noise_records() -> list[str]:
 
 
 def _is_clean_reference_name(record: str) -> bool:
-    return record in {"118", "119"} and (config.CLEAN_REF_DIR / record).with_suffix(".hea").is_file()
+    return record in {"118", "119"} and all(
+        (config.CLEAN_REF_DIR / f"{record}.{suffix}").is_file() for suffix in ("hea", "dat")
+    )
 
 
 def clean_reference_path(record: str) -> Path | None:
@@ -138,7 +141,11 @@ def _fs_for_record(record: str) -> float:
 
 
 def clean_reference_available() -> bool:
-    return all((config.CLEAN_REF_DIR / f"{rec}.hea").is_file() for rec in ("118", "119"))
+    return all(
+        (config.CLEAN_REF_DIR / f"{rec}.{suffix}").is_file()
+        for rec in ("118", "119")
+        for suffix in ("hea", "dat")
+    )
 
 
 def list_clean_references() -> list[str]:
@@ -146,7 +153,7 @@ def list_clean_references() -> list[str]:
         return []
     found = []
     for hea in sorted(config.CLEAN_REF_DIR.glob("*.hea")):
-        if hea.stem in {"118", "119"}:
+        if hea.stem in {"118", "119"} and hea.with_suffix(".dat").is_file():
             found.append(hea.stem)
     return found
 
@@ -324,6 +331,22 @@ def _index_is_current(index: dict[str, Any]) -> bool:
     )
 
 
+def _bundled_index_is_compatible(index: dict[str, Any]) -> bool:
+    """Use the shipped, precomputed index on Vercel without trusting local paths/mtimes."""
+    if not os.getenv("VERCEL") or not clean_reference_available():
+        return False
+    try:
+        expected_records = set(list_records())
+        expected_noises = set(list_noise_records())
+        return (
+            index.get("version") == config.INDEX_VERSION
+            and set(index.get("records", {})) == expected_records
+            and set(index.get("noises", {})) == expected_noises
+        )
+    except (DatasetError, TypeError):
+        return False
+
+
 def _atomic_json_write(path: Path, payload: dict[str, Any]) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
@@ -345,7 +368,21 @@ def build_dataset_index(force: bool = False) -> dict[str, Any]:
         except (OSError, json.JSONDecodeError):
             log.warning("Ignoring unreadable dataset index cache.")
 
+    # The repository ships a measured index. Its source paths and file mtimes
+    # belong to the machine that created it, so validate the record inventory
+    # instead when running from the immutable Vercel bundle.
+    if not force:
+        bundled_path = config.DATA_DIR / "cache" / "dataset_index.json"
+        if bundled_path != config.DATASET_INDEX_PATH and bundled_path.is_file():
+            try:
+                bundled = json.loads(bundled_path.read_text(encoding="utf-8"))
+                if _bundled_index_is_compatible(bundled):
+                    return bundled
+            except (OSError, json.JSONDecodeError):
+                log.warning("Ignoring unreadable bundled dataset index.")
+
     _require_dataset()
+    config.ensure_dirs()
     step_s = 5.0
     records: dict[str, Any] = {}
     noises: dict[str, Any] = {}

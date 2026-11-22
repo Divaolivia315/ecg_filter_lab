@@ -13,9 +13,12 @@ INDEX_VERSION = 3
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "data"
-CLEAN_REF_DIR = Path(os.getenv("ECG_CLEAN_REF_DIR", str(DATA_DIR / "clean-reference"))).resolve()
-EXPERIMENTS_DIR = DATA_DIR / "experiments"
-CACHE_DIR = DATA_DIR / "cache"
+CLEAN_REF_DIR = Path(os.getenv("ECG_CLEAN_REF_DIR", str(DATA_DIR / "clean-reference"))).expanduser().resolve()
+RUNTIME_DATA_DIR = Path(
+    os.getenv("ECG_RUNTIME_DIR", "/tmp/ecg-filter-lab" if os.getenv("VERCEL") else str(DATA_DIR))
+).expanduser().resolve()
+EXPERIMENTS_DIR = Path(os.getenv("ECG_EXPERIMENTS_DIR", str(RUNTIME_DATA_DIR / "experiments"))).expanduser().resolve()
+CACHE_DIR = Path(os.getenv("ECG_CACHE_DIR", str(RUNTIME_DATA_DIR / "cache"))).expanduser().resolve()
 DATASET_INDEX_PATH = CACHE_DIR / "dataset_index.json"
 
 FS_EXPECTED = 360.0
@@ -77,7 +80,7 @@ LIMITATIONS = [
 
 
 def _valid_dataset(path: Path) -> bool:
-    return (path / "RECORDS").is_file() and (path / "bw.hea").is_file()
+    return all((path / required).is_file() for required in ("RECORDS", "bw.hea", "bw.dat"))
 
 
 def find_dataset_dir() -> Path | None:
@@ -87,10 +90,12 @@ def find_dataset_dir() -> Path | None:
         candidates.append(Path(env))
     candidates.extend(
         [
+            DATA_DIR / "NSTDB" / "mit-bih-noise-stress-test-database-1.0.0",
+            DATA_DIR / "nstdb" / "mit-bih-noise-stress-test-database-1.0.0",
+            DATA_DIR / "NSTDB",
             PROJECT_ROOT.parent / "website" / "mit-bih-noise-stress-test-database-1.0.0",
             PROJECT_ROOT.parent.parent / "website" / "mit-bih-noise-stress-test-database-1.0.0",
             Path(r"C:\Users\EKG\website\mit-bih-noise-stress-test-database-1.0.0"),
-            PROJECT_ROOT / "data" / "nstdb",
             PROJECT_ROOT / "dataset" / "mit-bih-noise-stress-test-database-1.0.0",
         ]
     )
@@ -106,10 +111,6 @@ def find_dataset_dir() -> Path | None:
 
 DATASET_DIR = find_dataset_dir()
 
-for directory in (DATA_DIR, CACHE_DIR, EXPERIMENTS_DIR):
-    directory.mkdir(parents=True, exist_ok=True)
-
-
 def ensure_dirs() -> None:
-    for directory in (DATA_DIR, CACHE_DIR, EXPERIMENTS_DIR):
+    for directory in (CACHE_DIR, EXPERIMENTS_DIR):
         directory.mkdir(parents=True, exist_ok=True)

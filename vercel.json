@@ -1,0 +1,15 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm ci --prefix frontend",
+  "buildCommand": "npm run build --prefix frontend",
+  "outputDirectory": "frontend/dist",
+  "functions": {
+    "api/index.py": {
+      "includeFiles": "{backend/app/**,data/NSTDB/mit-bih-noise-stress-test-database-1.0.0/**,data/clean-reference/**,data/cache/dataset_index.json}"
+    }
+  },
+  "rewrites": [
+    { "source": "/api", "destination": "/api/index.py" },
+    { "source": "/api/(.*)", "destination": "/api/index.py" }
+  ]
+}
